@@ -125,11 +125,6 @@ const sidebars = {
     },
     {
       type: 'doc',
-      id: 'autoscaling',
-      label: 'Autoscaling',
-    },
-    {
-      type: 'doc',
       id: 'troubleshooting',
       label: 'Troubleshooting',
     },
