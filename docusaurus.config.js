@@ -55,6 +55,15 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       image: 'img/social-card.svg',
+      // Algolia DocSearch. The appId and (search-only) apiKey are public and
+      // safe to commit. contextualSearch (default true) scopes results to the
+      // version the reader is currently viewing.
+      algolia: {
+        appId: '80Y8ZEWQBI',
+        apiKey: '88e1e9768914cb753242ecd420c9fd49',
+        indexName: 'CNMSQL - Docs',
+        contextualSearch: true,
+      },
       navbar: {
         title: 'CNMSQL - CloudNative for MySQL',
         logo: {
