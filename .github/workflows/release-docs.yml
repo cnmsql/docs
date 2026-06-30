@@ -1,0 +1,167 @@
+name: Sync & deploy documentation
+
+# Driven by the operator repo (cnmsql/cnmsql):
+#   - docs-release : a release was published -> cut a new versioned snapshot
+#   - docs-update  : main docs changed       -> refresh the unreleased "next" docs
+# Also runnable by hand via workflow_dispatch.
+on:
+  repository_dispatch:
+    types: [docs-release, docs-update]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Operator git ref to pull docs from (tag or branch)
+        required: true
+        default: main
+      version:
+        description: Version to cut (e.g. 0.5). Leave empty to only refresh "next".
+        required: false
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: docs-sync
+  cancel-in-progress: false
+
+env:
+  OPERATOR_REPO: cnmsql/cnmsql
+
+jobs:
+  sync:
+    name: Sync docs from operator
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+    - name: Resolve inputs
+      id: vars
+      env:
+        EVENT: ${{ github.event_name }}
+        ACTION: ${{ github.event.action }}
+        DISPATCH_REF: ${{ github.event.client_payload.ref }}
+        DISPATCH_VERSION: ${{ github.event.client_payload.version }}
+        INPUT_REF: ${{ github.event.inputs.ref }}
+        INPUT_VERSION: ${{ github.event.inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ "$EVENT" = "repository_dispatch" ]; then
+          ref="$DISPATCH_REF"
+          version="$DISPATCH_VERSION"
+          [ "$ACTION" = "docs-release" ] && cut=true || cut=false
+        else
+          ref="$INPUT_REF"
+          version="$INPUT_VERSION"
+          [ -n "$version" ] && cut=true || cut=false
+        fi
+        ref="${ref:-main}"
+        minor=""
+        if [ "$cut" = "true" ]; then
+          minor="$(echo "${version#v}" | cut -d. -f1-2)"
+          if [ -z "$minor" ]; then
+            echo "::error::version required to cut a release snapshot" >&2
+            exit 1
+          fi
+        fi
+        {
+          echo "ref=$ref"
+          echo "cut=$cut"
+          echo "minor=$minor"
+        } >> "$GITHUB_OUTPUT"
+        echo "ref=$ref cut=$cut minor=$minor"
+
+    - name: Checkout website repo
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: true
+
+    - name: Checkout operator docs at ref
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ env.OPERATOR_REPO }}
+        ref: ${{ steps.vars.outputs.ref }}
+        path: _operator
+        sparse-checkout: docs
+        persist-credentials: false
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Sync unreleased docs
+      run: ./scripts/sync-current.sh _operator/docs
+
+    - name: Cut versioned snapshot
+      if: steps.vars.outputs.cut == 'true'
+      run: npm run docs:version "${{ steps.vars.outputs.minor }}"
+
+    - name: Commit changes
+      id: commit
+      run: |
+        set -euo pipefail
+        git config user.name 'github-actions[bot]'
+        git config user.email 'github-actions[bot]@users.noreply.github.com'
+        rm -rf _operator
+        git add current sidebars.js versioned_docs versioned_sidebars versions.json 2>/dev/null || true
+        if git diff --cached --quiet; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "no documentation changes"
+          exit 0
+        fi
+        if [ "${{ steps.vars.outputs.cut }}" = "true" ]; then
+          msg="docs: snapshot version ${{ steps.vars.outputs.minor }} from ${{ steps.vars.outputs.ref }}"
+        else
+          msg="docs: refresh next from ${{ steps.vars.outputs.ref }}"
+        fi
+        git commit -m "$msg"
+        git push
+        echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Build & deploy to Pages
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Checkout website repo
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build documentation
+      run: npm run build
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+
+    - name: Upload Pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: build
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
