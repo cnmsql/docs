@@ -1,0 +1,33 @@
+.dropdown {
+  display: inline-block;
+  margin-bottom: 1rem;
+}
+
+/* The badge pill doubles as the dropdown trigger. */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  /* Override the inherited button defaults so it still reads as a badge. */
+  font: inherit;
+  margin: 0;
+}
+
+/* Down caret that flips when the menu is open. */
+.caret {
+  border-left: 0.28rem solid transparent;
+  border-right: 0.28rem solid transparent;
+  border-top: 0.32rem solid currentColor;
+  transition: transform var(--ifm-transition-fast);
+}
+
+.dropdown :global(.dropdown__menu) {
+  top: calc(100% + 0.25rem);
+  left: 0;
+  min-width: 8rem;
+}
+
+.dropdown:global(.dropdown--show) .caret {
+  transform: rotate(180deg);
+}
