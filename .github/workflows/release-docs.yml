@@ -17,6 +17,11 @@ on:
         description: Version to cut (e.g. 0.5). Leave empty to only refresh "next".
         required: false
         default: ''
+      deploy_only:
+        description: Skip sync; just build & deploy the docs already committed.
+        type: boolean
+        required: false
+        default: false
 
 permissions: {}
 
@@ -30,6 +35,7 @@ env:
 jobs:
   sync:
     name: Sync docs from operator
+    if: ${{ github.event.inputs.deploy_only != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -127,7 +133,10 @@ jobs:
   deploy:
     name: Build & deploy to Pages
     needs: sync
-    if: needs.sync.outputs.changed == 'true'
+    if: >-
+      ${{ always()
+      && (github.event.inputs.deploy_only == 'true'
+          || (needs.sync.result == 'success' && needs.sync.outputs.changed == 'true')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
