@@ -138,6 +138,7 @@ jobs:
       && (github.event.inputs.deploy_only == 'true'
           || (needs.sync.result == 'success' && needs.sync.outputs.changed == 'true')) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pages: write
@@ -174,3 +175,5 @@ jobs:
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v4
+      with:
+        timeout: 300000   # fail after 5 min queued instead of the default 10
