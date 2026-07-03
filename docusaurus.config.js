@@ -51,6 +51,9 @@ const config = {
 
   themes: ['@docusaurus/theme-mermaid'],
 
+  // Emits static/versiondiff/<docId>.json for the in-page version diff panel.
+  plugins: [require.resolve('./plugins/version-diff')],
+
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
