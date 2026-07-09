@@ -49,7 +49,7 @@ const config = {
     ],
   ],
 
-  themes: ['@docusaurus/theme-mermaid'],
+  themes: ['@docusaurus/theme-mermaid', '@docsearch/docusaurus-adapter'],
 
   // Emits static/versiondiff/<docId>.json for the in-page version diff panel.
   plugins: [require.resolve('./plugins/version-diff')],
@@ -58,14 +58,22 @@ const config = {
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
       image: 'img/social-card.svg',
-      // Algolia DocSearch. The appId and (search-only) apiKey are public and
-      // safe to commit. contextualSearch (default true) scopes results to the
-      // version the reader is currently viewing.
-      algolia: {
+      // Algolia DocSearch via @docsearch/docusaurus-adapter (Algolia-maintained).
+      // The appId and (search-only) apiKey are public and safe to commit.
+      // contextualSearch scopes results to the version the reader is viewing;
+      // the adapter skips its facetFilters injection when askAi.agentStudio is
+      // true, so Ask AI (Agent Studio backend) receives a valid request.
+      // Uses the `docsearch` key (not `algolia`) so preset-classic's built-in
+      // theme-search-algolia stays disabled and only the adapter handles search.
+      docsearch: {
         appId: '80Y8ZEWQBI',
         apiKey: '88e1e9768914cb753242ecd420c9fd49',
         indexName: 'CNMSQL - Docs',
         contextualSearch: true,
+        askAi: {
+          assistantId: "0e916aac-64c5-4aeb-a556-98d814928e2b",
+          agentStudio: true,
+        },
       },
       navbar: {
         title: 'CNMSQL - CloudNative for MySQL',

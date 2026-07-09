@@ -12,6 +12,7 @@
     "docs:version": "docusaurus docs:version"
   },
   "dependencies": {
+    "@docsearch/docusaurus-adapter": "^4.6.3",
     "@docusaurus/core": "^3.8.1",
     "@docusaurus/preset-classic": "^3.8.1",
     "@docusaurus/theme-mermaid": "^3.8.1",
