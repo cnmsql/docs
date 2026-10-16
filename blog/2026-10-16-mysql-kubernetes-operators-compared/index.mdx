@@ -1,0 +1,228 @@
+---
+title: "MySQL operators for Kubernetes compared (2026)"
+description: "A factual comparison of MySQL and MariaDB operators for Kubernetes in 2026: Percona, Oracle, MOCO, Vitess, mariadb-operator, KubeDB, KubeBlocks and CNMSQL."
+slug: mysql-kubernetes-operators-compared
+authors: [yewolf]
+tags: [comparison, kubernetes, mysql, mariadb, operators]
+keywords:
+  - MySQL Kubernetes operator
+  - MySQL operator comparison
+  - Percona Operator for MySQL
+  - MySQL Operator for Kubernetes
+  - MOCO
+  - Vitess operator
+  - mariadb-operator
+  - KubeDB
+  - KubeBlocks
+  - MySQL point-in-time recovery Kubernetes
+  - MySQL high availability Kubernetes
+image: ./social-card.png
+---
+
+import ComparisonMatrix from '@site/src/components/ComparisonMatrix';
+import {projects, sections, notes} from './comparison';
+
+To run MySQL on Kubernetes you usually pick an operator: a controller that
+provisions the database, keeps replication healthy, fails over when the
+primary dies and takes backups. Several are actively maintained, and they
+differ in which MySQL they run, how they stay available and how far back you
+can restore.
+
+We maintain CNMSQL, so we are not neutral. Every fact below comes from each
+project's own documentation, listed under [Sources](#sources), and there is a
+full section on what CNMSQL cannot do. If something is wrong or out of date,
+[open an issue](https://github.com/cnmsql/docs/issues).
+
+<!-- truncate -->
+
+## The short version
+
+- **A vendor-maintained operator with a GA release:** one of Percona's two
+  operators. One runs Percona XtraDB Cluster (Galera), the other runs Percona
+  Server with Group Replication.
+- **Oracle MySQL, InnoDB Cluster or the Enterprise edition:** Oracle's MySQL
+  Operator.
+- **More writes than one primary can take:** Vitess.
+- **MariaDB with Galera or MaxScale:** mariadb-operator.
+- **Plain semi-sync replication, no proxy:** MOCO or CNMSQL.
+- **One platform for many database engines:** KubeDB (commercial) or
+  KubeBlocks (AGPL-3.0).
+- **CloudNativePG-style operations for MySQL:** CNMSQL. It offers continuous
+  binlog archiving with point-in-time recovery to a time or a GTID, and one
+  API for Percona Server and MariaDB. It is four months old, so read
+  [what it does not do](#what-cnmsql-does-not-do) first.
+
+## Feature comparison
+
+Checked on 16 October 2026. Numbers in the table refer to the notes under it.
+
+<ComparisonMatrix
+  projects={projects}
+  sections={sections}
+  notes={notes}
+  idPrefix="operators"
+  caption="MySQL operators for Kubernetes: feature comparison"
+/>
+
+## What CNMSQL does not do
+
+Some of these are on the roadmap. Others are design choices.
+
+| Area | Limitation |
+| --- | --- |
+| Maturity | First release in June 2026. The API is `v1alpha1` and can change between minor releases; read the [upgrade notes](/operator-upgrades) before every upgrade. |
+| Scale | No sharding and no multi-primary writes. One primary takes every write. |
+| Disaster recovery | No standby cluster in another region yet. Cross-region recovery means restoring from the object store. |
+| Backup storage | S3-compatible object storage only. GCS works through its S3 interoperability API; Azure Blob Storage and volumes are not supported. |
+| Routing | No proxy. Applications choose between Kubernetes Services. There is no read/write splitting or connection pooling. |
+| Engines | Percona Server 8.0 and 8.4 only for MySQL. No Oracle MySQL images, no 5.7. On MariaDB: no Galera or Group Replication. |
+| Changes in place | A cluster cannot switch between async replication and Group Replication, or between MySQL and MariaDB. Downgrades are not supported. |
+| Recovery | Group Replication quorum loss needs a human to run `kubectl cnmsql group recover`. A diverged replica is re-initialized by hand, which discards its data. |
+| Dependencies | cert-manager is required. No NetworkPolicy examples ship yet. |
+
+Details: [Group Replication](/group-replication),
+[Replication and failover](/replication-failover),
+[Point-in-time recovery](/pitr), [MariaDB flavor](/mariadb).
+
+## The other options, in brief
+
+### Percona XtraDB Cluster operator
+
+The longest-running operator in this list (since 2018). It runs Galera-based
+synchronous replication behind HAProxy or ProxySQL.
+
+- **Pick it if:** you want a mature vendor operator, still run 5.7, or need
+  synchronous replication.
+- **Watch out for:** Galera's rules on primary keys and large transactions,
+  and the extra commit latency.
+
+### Percona Server operator
+
+Percona's operator for standard Percona Server. Group Replication has been GA
+since 1.0.0 (November 2025), and 1.2.0 added cross-site replication and
+encrypted backups.
+
+- **Pick it if:** you want Group Replication with a vendor behind it.
+- **Watch out for:** async replication and point-in-time recovery are still
+  tech previews.
+
+### Oracle MySQL Operator
+
+Runs InnoDB Cluster (Group Replication plus MySQL Router) on Oracle's
+Community or Enterprise images.
+
+- **Pick it if:** you are standardized on Oracle MySQL or need the Enterprise
+  edition.
+- **Watch out for:** backups are logical dumps only, point-in-time recovery is
+  not documented, and only one cluster-wide operator can be installed.
+
+### MOCO
+
+Cybozu's operator for GTID semi-sync replication on MySQL 8.0 and 8.4, up to
+five instances. It does not do Group Replication by design.
+
+- **Pick it if:** you want plain MySQL replication from a small, focused
+  operator.
+- **Watch out for:** binlogs are collected at backup time, not streamed, and
+  old backups are not deleted for you.
+
+### Vitess Operator
+
+Runs [Vitess](https://vitess.io/), a CNCF graduated project that shards MySQL
+behind the vtgate proxy.
+
+- **Pick it if:** one primary cannot keep up with your writes or data size.
+- **Watch out for:** more components to run, and
+  [SQL limits on sharded keyspaces](https://vitess.io/docs/reference/compatibility/mysql-compatibility/)
+  such as no `CREATE PROCEDURE` through Vitess and no unique `auto_increment`
+  across shards.
+
+### mariadb-operator
+
+MariaDB only, with async replication or Galera, optional MaxScale, and
+point-in-time recovery since 26.3.0.
+
+- **Pick it if:** you run MariaDB and want Galera or MaxScale.
+- **Compared with CNMSQL on MariaDB:** CNMSQL has neither Galera nor MaxScale.
+  It makes sense for MariaDB only if you want one operator for MariaDB and
+  Percona Server.
+
+### KubeDB
+
+AppsCode's commercial platform for many engines. For MySQL it supports Group
+Replication, InnoDB Cluster, semi-sync and remote replicas.
+
+- **Pick it if:** you want one supported product across many databases.
+- **Watch out for:** a paid license is needed for anything that lives longer
+  than 30 days.
+
+### KubeBlocks
+
+ApeCloud's multi-engine platform. Its MySQL addon supports replication, Group
+Replication and Orchestrator topologies on 5.7, 8.0 and 8.4.
+
+- **Pick it if:** you want one platform for several engines.
+- **Watch out for:** the AGPL-3.0 license, which some organizations do not
+  allow.
+
+### Inactive projects
+
+[Bitpoke mysql-operator](https://github.com/bitpoke/mysql-operator) (last
+release May 2023) and
+[RadonDB MySQL Kubernetes](https://github.com/radondb/radondb-mysql-kubernetes)
+(last release November 2024) are not archived, but we would not start a new
+deployment on either.
+
+### Managed services
+
+If the database does not have to run inside your cluster, Amazon RDS, Google
+Cloud SQL or Azure Database for MySQL remove the need for an operator, at the
+cost of price, provider lock-in and control over versions.
+
+## How to choose
+
+1. **Engine.** Oracle MySQL, Percona Server, Percona XtraDB Cluster or
+   MariaDB? This alone rules out several options.
+2. **Write scale.** If one primary cannot keep up, look at Vitess.
+3. **Disaster recovery.** Need a standby in another region today? Look at the
+   Percona operators, mariadb-operator or KubeDB.
+4. **Data loss.** Compare the point-in-time recovery row, and check whether it
+   is GA or a tech preview.
+5. **Proxy or not.** A proxy adds read/write splitting and one more component
+   to run.
+6. **License.** AGPL-3.0 (KubeBlocks) and commercial (KubeDB) need sign-off in
+   many companies.
+7. **Maturity.** GA vendor operators, community projects with years of
+   releases, and pre-1.0 projects like CNMSQL carry different levels of risk.
+
+## Where CNMSQL fits
+
+CNMSQL applies the design of [CloudNativePG](https://cloudnative-pg.io/) to
+MySQL: an instance manager in each Pod, failover decided by the operator with
+leases and fencing, and Kubernetes Services instead of a proxy. On top of the
+features in the table, it has a namespaced install mode, HPA and VPA support,
+and slim rootless images.
+
+If the limitations above don't rule it out, the [quickstart](/quickstart)
+gets a three-instance cluster running in a few minutes. Issues and pull
+requests are welcome on [GitHub](https://github.com/cnmsql/cnmsql).
+
+## Sources
+
+<details>
+<summary>Every source, checked on 16 October 2026</summary>
+
+Release dates come from each project's GitHub releases page unless a source
+below gives one.
+
+- **CNMSQL:** [documentation](/), [GitHub repository](https://github.com/cnmsql/cnmsql)
+- **Percona XtraDB Cluster operator:** [documentation](https://docs.percona.com/percona-operator-for-mysql/pxc/latest/index.html), [1.20.0 release notes](https://docs.percona.com/percona-operator-for-mysql/pxc/latest/ReleaseNotes/Kubernetes-Operator-for-PXC-RN1.20.0.html), [point-in-time recovery](https://docs.percona.com/percona-operator-for-mysql/pxc/latest/backups-pitr.html), [backup storage](https://docs.percona.com/percona-operator-for-mysql/pxc/latest/backups-storage.html), [users](https://docs.percona.com/percona-operator-for-mysql/pxc/latest/users.html), [database upgrades](https://docs.percona.com/percona-operator-for-mysql/pxc/latest/update-db.html)
+- **Percona Server operator:** [documentation](https://docs.percona.com/percona-operator-for-mysql/ps/latest/index.html), [1.2.0 release notes](https://docs.percona.com/percona-operator-for-mysql/ps/ReleaseNotes/Kubernetes-Operator-for-PS-RN1.2.0.html), [GA announcement](https://docs.percona.com/new/2025/11/17/general-availability-percona-operator-for-mysql-100-with-group-replication/), [backup storage](https://docs.percona.com/percona-operator-for-mysql/ps/latest/backups-storage.html), [users](https://docs.percona.com/percona-operator-for-mysql/ps/latest/users.html), [database upgrades](https://docs.percona.com/percona-operator-for-mysql/ps/latest/update-db.html)
+- **Oracle MySQL Operator:** [introduction](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-introduction.html), [backups](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-backups.html), [custom resource properties](https://dev.mysql.com/doc/mysql-operator/en/mysql-operator-properties.html), [26.7.0-2.3.0 release notes](https://dev.mysql.com/doc/relnotes/mysql-operator/en/news-26-7-0-2.3.0.html), [README](https://github.com/mysql/mysql-operator)
+- **MOCO:** [README](https://github.com/cybozu-go/moco), [backup design](https://github.com/cybozu-go/moco/blob/main/docs/backup.md), [Azure Blob Storage](https://github.com/cybozu-go/moco/blob/main/docs/azure-blob-storage.md), [usage](https://github.com/cybozu-go/moco/blob/main/docs/usage.md), [upgrading mysqld](https://github.com/cybozu-go/moco/blob/main/docs/upgrading.md)
+- **Vitess:** [operator overview](https://vitess.io/docs/faq/operating-vitess/overview/what-is-the-vitess-operator/), [MySQL compatibility](https://vitess.io/docs/reference/compatibility/mysql-compatibility/), [backup and restore](https://vitess.io/docs/user-guides/operating-vitess/backup-and-restore/overview/)
+- **mariadb-operator:** [README](https://github.com/mariadb-operator/mariadb-operator), [SQL resources](https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/sql_resources.md), [logical backups](https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/logical_backup.md), [updates](https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/updates.md)
+- **KubeDB:** [MySQL overview](https://kubedb.com/kubernetes/databases/run-and-manage-mysql-on-kubernetes/), [MySQL guides](https://kubedb.com/docs/v2026.10.12/guides/mysql/), [remote replica](https://kubedb.com/docs/v2026.10.12/guides/mysql/clustering/remote-replica/), [version updates](https://kubedb.com/docs/v2026.10.12/guides/mysql/update-version/overview/), [MariaDB guides](https://kubedb.com/docs/v2026.10.12/guides/mariadb/), [Percona XtraDB](https://kubedb.com/kubernetes/databases/run-and-manage-percona-xtradb-on-kubernetes/), [KubeStash storage backends](https://kubestash.com/docs/latest/guides/backends/overview/), [pricing](https://kubedb.com/pricing/)
+- **KubeBlocks:** [repository](https://github.com/apecloud/kubeblocks), [MySQL addon](https://github.com/apecloud/kubeblocks-addons/tree/main/addons/mysql), [MySQL backup actions](https://github.com/apecloud/kubeblocks-addons/tree/main/addons/mysql/templates), [backup repositories](https://kubeblocks.io/docs/preview/user_docs/concepts/backup-and-restore/backup/backup-repo), [addon list](https://github.com/apecloud/kubeblocks-addons/tree/main/addons)
+
+</details>

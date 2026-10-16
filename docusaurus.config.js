@@ -41,7 +41,33 @@ const config = {
             },
           },
         },
-        blog: false,
+        // Authored here, not synced from the operator repo; the release
+        // workflow never touches ./blog.
+        blog: {
+          path: 'blog',
+          routeBasePath: 'blog',
+          blogTitle: 'CNMSQL Blog',
+          blogDescription:
+            'Releases, design notes and guides on running MySQL and MariaDB on Kubernetes with the CNMSQL operator.',
+          // No "All posts" sidebar: it leaves more width for wide tables, and
+          // /blog/archive lists every post.
+          blogSidebarCount: 0,
+          postsPerPage: 10,
+          showReadingTime: true,
+          authorsMapPath: 'authors.yml',
+          tags: 'tags.yml',
+          onInlineAuthors: 'throw',
+          onInlineTags: 'throw',
+          onUntruncatedBlogPosts: 'throw',
+          feedOptions: {
+            type: ['rss', 'atom'],
+            title: 'CNMSQL Blog',
+            description:
+              'Releases, design notes and guides on running MySQL and MariaDB on Kubernetes with the CNMSQL operator.',
+            copyright: `Copyright © ${new Date().getFullYear()} The CNMSQL - CloudNative for MySQL Authors. Licensed under CC BY 4.0.`,
+            xslt: true,
+          },
+        },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },
@@ -52,12 +78,27 @@ const config = {
   themes: ['@docusaurus/theme-mermaid', '@docsearch/docusaurus-adapter'],
 
   // Emits static/versiondiff/<docId>.json for the in-page version diff panel.
-  plugins: [require.resolve('./plugins/version-diff')],
+  plugins: [
+    require.resolve('./plugins/version-diff'),
+    // Umami analytics (self-hosted). The plugin only injects the scripts in
+    // production builds, so `npm start` traffic is never recorded.
+    [
+      '@dipakparmar/docusaurus-plugin-umami',
+      /** @type {import('@dipakparmar/docusaurus-plugin-umami').Options} */
+      ({
+        websiteID: 'dd328355-4a41-432e-9b36-c7ed68eb91a0',
+        analyticsDomain: 'umami.yewolf.fr',
+        dataDomains: 'cnmsql.co',
+        enableRecorder: true,
+      }),
+    ],
+  ],
 
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      image: 'img/social-card.svg',
+      // Open Graph / Twitter cards do not render SVG, so the card is a PNG.
+      image: 'img/social-card.png',
       // Algolia DocSearch via @docsearch/docusaurus-adapter (Algolia-maintained).
       // The appId and (search-only) apiKey are public and safe to commit.
       // contextualSearch scopes results to the version the reader is viewing;
@@ -92,6 +133,11 @@ const config = {
           {
             to: '/api-reference',
             label: 'API',
+            position: 'left',
+          },
+          {
+            to: '/blog',
+            label: 'Blog',
             position: 'left',
           },
           {
@@ -146,6 +192,15 @@ const config = {
           {
             title: 'Project',
             items: [
+              {
+                label: 'Blog',
+                to: '/blog',
+              },
+              {
+                label: 'RSS feed',
+                // pathname:// links to a static file, not a client-side route.
+                href: 'pathname:///blog/rss.xml',
+              },
               {
                 label: 'GitHub',
                 href: 'https://github.com/cnmsql/cnmsql',

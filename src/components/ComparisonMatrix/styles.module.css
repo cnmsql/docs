@@ -1,0 +1,217 @@
+.matrix {
+  margin: 1.5rem 0 2rem;
+  /* Pinned cells need an opaque background so scrolled cells pass under
+     them. Infima's --ifm-background-color is transparent in light mode. */
+  --cmp-bg: var(--ifm-color-white);
+}
+
+:global([data-theme='dark']) .matrix {
+  --cmp-bg: var(--ifm-background-color);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--ifm-color-emphasis-600);
+  margin: 0 0 0.5rem;
+}
+
+.scroller {
+  overflow-x: auto;
+  border: 1px solid var(--ifm-table-border-color);
+  border-radius: var(--ifm-global-radius);
+}
+
+.scroller:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* Infima renders tables as scrollable blocks with zebra rows; undo both. */
+.table {
+  display: table;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+/* nth-child matches Infima's zebra selector so this wins over it. */
+.table tr,
+.table tr:nth-child(2n) {
+  background: transparent;
+  border: 0;
+}
+
+.table th,
+.table td {
+  border: 0;
+  border-bottom: 1px solid var(--ifm-table-border-color);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table tbody:last-child tr:last-child th,
+.table tbody:last-child tr:last-child td {
+  border-bottom: 0;
+}
+
+/* The caption names the table for screen readers; the heading above it
+   already does that visually. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Project columns stay narrow enough that several fit on screen. */
+.project,
+.table td {
+  min-width: 8.5rem;
+  max-width: 11rem;
+}
+
+.project {
+  font-weight: 700;
+  background: var(--ifm-color-emphasis-100);
+}
+
+/* Pinned feature column. */
+.feature {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 11rem;
+  max-width: 13rem;
+  background: var(--cmp-bg);
+  box-shadow:
+    inset -1px 0 0 var(--ifm-table-border-color),
+    4px 0 6px -4px rgba(0, 0, 0, 0.25);
+  font-weight: 600;
+}
+
+thead .feature {
+  background: var(--ifm-color-emphasis-100);
+}
+
+.section th {
+  background: var(--ifm-color-emphasis-200);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+/* The section title spans the whole row; pin the text, not the cell. */
+.section th span {
+  position: sticky;
+  left: 0.75rem;
+}
+
+.cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.dot {
+  flex: none;
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-top: 0.22rem;
+  border-radius: 50%;
+}
+
+.yes {
+  background: var(--ifm-color-success);
+}
+
+.partial {
+  background: var(--ifm-color-warning);
+}
+
+.no {
+  background: var(--ifm-color-danger);
+}
+
+.unknown {
+  border: 2px solid var(--ifm-color-emphasis-500);
+}
+
+.ref {
+  margin-left: 0.15rem;
+  font-weight: 600;
+}
+
+.ref a {
+  text-decoration: none;
+}
+
+.notes {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
+.notes li {
+  margin-bottom: 0.25rem;
+  scroll-margin-top: calc(var(--ifm-navbar-height) + 1rem);
+}
+
+.notes li:target {
+  background: var(--ifm-color-emphasis-200);
+  border-radius: var(--ifm-global-radius);
+}
+
+@media (min-width: 1400px) {
+  .hint {
+    display: none;
+  }
+}
+
+/* On phones, keep the pinned column narrow so a project column fits beside
+   it. */
+@media (max-width: 600px) {
+  .feature {
+    min-width: 7.5rem;
+    max-width: 7.5rem;
+  }
+
+  .project,
+  .table td {
+    min-width: 7.5rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem 0.55rem;
+  }
+}

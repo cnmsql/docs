@@ -1,0 +1,24 @@
+comparison:
+  label: Comparison
+  permalink: /comparison
+  description: Factual comparisons between CNMSQL and other ways to run MySQL and MariaDB on Kubernetes.
+
+kubernetes:
+  label: Kubernetes
+  permalink: /kubernetes
+  description: Running stateful databases on Kubernetes with operators.
+
+mysql:
+  label: MySQL
+  permalink: /mysql
+  description: Posts about MySQL and Percona Server for MySQL on Kubernetes.
+
+mariadb:
+  label: MariaDB
+  permalink: /mariadb
+  description: Posts about running MariaDB on Kubernetes.
+
+operators:
+  label: Operators
+  permalink: /operators
+  description: Kubernetes operators for databases, how they work and how they differ.
