@@ -78,7 +78,20 @@ const config = {
   themes: ['@docusaurus/theme-mermaid', '@docsearch/docusaurus-adapter'],
 
   // Emits static/versiondiff/<docId>.json for the in-page version diff panel.
-  plugins: [require.resolve('./plugins/version-diff')],
+  plugins: [
+    require.resolve('./plugins/version-diff'),
+    // Umami analytics (self-hosted). The plugin only injects the scripts in
+    // production builds, so `npm start` traffic is never recorded.
+    [
+      '@dipakparmar/docusaurus-plugin-umami',
+      /** @type {import('@dipakparmar/docusaurus-plugin-umami').Options} */
+      ({
+        websiteID: 'dd328355-4a41-432e-9b36-c7ed68eb91a0',
+        analyticsDomain: 'umami.yewolf.fr',
+        dataDomains: 'cnmsql.co',
+        enableRecorder: true,
+      }),
+    ],
   ],
 
   themeConfig:
