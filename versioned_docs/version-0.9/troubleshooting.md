@@ -1,0 +1,319 @@
+---
+title: "Troubleshooting"
+description: "Common cnmsql symptoms, likely causes, and first commands to run."
+sidebar_position: 18
+---
+
+# Troubleshooting
+
+This page starts with symptoms and points to the first places to inspect. cnmsql
+surfaces most issues through Cluster/Backup status, Kubernetes Events, and the
+instance-manager logs.
+
+## First commands
+
+```bash
+kubectl cnmsql status <cluster>
+kubectl cnmsql logs cluster <cluster>
+kubectl describe cluster <cluster>
+kubectl get events --sort-by=.lastTimestamp
+kubectl get backup
+kubectl get scheduledbackup
+```
+
+Operator logs:
+
+```bash
+kubectl logs -n cnmsql-system deployment/cnmsql-controller-manager -c manager
+```
+
+Instance logs:
+
+```bash
+kubectl logs pod/<cluster>-1 -c manager
+```
+
+## Cluster is not Ready
+
+Check:
+
+```bash
+kubectl cnmsql status <cluster>
+kubectl cnmsql logs cluster <cluster>
+kubectl describe pod <pod>
+```
+
+Common causes:
+
+- cert-manager has not produced TLS Secrets yet;
+- PVC is Pending due to storage class or capacity;
+- image pull failed;
+- unsupported Cluster shape is blocked by the controller;
+- instance-manager `/status` is unavailable;
+- a bootstrap Job (initdb, restore, join, or import) failed.
+
+Look at `status.phase`, `status.phaseReason`, and Events first.
+
+## A bootstrap Job failed
+
+An instance's data volume is bootstrapped by a one-shot Job named
+`<instance>-<mode>` (`initdb`, `restore`, `join`, or `import`) that runs before
+the instance Pod exists. A failed Job sets the Cluster's `BootstrapFailed`
+condition with the Job's own reason (e.g. `BackoffLimitExceeded` or
+`DeadlineExceeded`), names it in `status.phaseReason`, and emits a
+`BootstrapJobFailed` Warning Event.
+
+Check:
+
+```bash
+kubectl get jobs -l mysql.cnmsql.co/bootstrap-instance
+kubectl logs job/<instance>-<mode>
+kubectl get cluster <cluster> -o \
+  jsonpath='{.status.conditions[?(@.type=="BootstrapFailed")]}'
+```
+
+The failed Job is kept, so its logs are available. The operator replaces it
+only when the spec it was built from changes (a new source Backup, a longer
+deadline); delete the Job by hand to retry with the same spec.
+
+`BootstrapRefused` Warning Events mean something different: the operator
+refused to bootstrap the current primary's volume on an established cluster and
+left the instance down. Recover it by restoring a backup (see
+[Point-in-time recovery](./pitr.md)) or failing over.
+
+## Replica will not join
+
+Check the clone Job's logs:
+
+```bash
+kubectl logs job/<replica>-join
+```
+
+Common causes:
+
+- primary is not Ready yet;
+- mTLS material is missing or invalid;
+- source manager endpoint is unreachable;
+- XtraBackup stream failed;
+- target PVC already contains incompatible data;
+- MySQL version/image is incompatible with the source backup.
+
+Replica provisioning uses XtraBackup over the existing instance-manager mTLS
+port. Network policies or service DNS issues can break the join path.
+
+## Replica is Running but not replicating
+
+A replica whose Pod is Running but whose replication has stopped at the SQL layer
+(a halted IO/SQL thread with a recorded error, e.g. a duplicate-key conflict) is
+reported under `status.replicationBrokenInstances` and marks the cluster
+`Degraded`, even though the Pod looks healthy. The `Degraded` condition reason
+names the instance and its replication error.
+
+Check:
+
+```bash
+kubectl cnmsql status <cluster>
+kubectl get cluster <cluster> -o jsonpath='{.status.replicationBrokenInstances}'
+kubectl logs pod/<replica-pod> -c manager
+```
+
+If the break is not transient, re-initialise the replica (see below) to re-clone
+it from a backup.
+
+## Diverged or broken replica recovery
+
+A replica listed in `status.divergedInstances` (errant GTIDs) or
+`status.replicationBrokenInstances` (stopped replication) is held out of service.
+MySQL has no `pg_rewind` to realign it surgically, so the remediation is to
+re-initialise it. The operator deletes its Pod and PVC and re-clones a fresh
+copy from a backup, keeping the instance's name and `server_id`:
+
+```bash
+kubectl cnmsql reinit <cluster> <replica>
+```
+
+This is destructive: data only on that instance (including errant transactions)
+is lost. It is always human-triggered, and the current primary is refused, so
+switch over first if you need to rebuild a former primary. See the
+[operations runbook](./operations.md#re-initialise-an-instance-from-scratch).
+
+## Instance will not start: InnoDB reports corrupt data
+
+When mysqld cannot start and its output shows InnoDB found damaged data, the
+instance manager records the diagnosis in the Pod's termination message before
+exiting. Read it with:
+
+```bash
+kubectl get pod <instance> -o \
+  jsonpath='{.status.containerStatuses[?(@.name=="mysql")].lastState.terminated.message}'
+```
+
+A diagnosed instance reports `CNMSQL_INNODB_CORRUPTION` followed by the InnoDB
+error lines that triggered it.
+
+**For a replica this is handled automatically.** The operator re-clones it from
+the primary as soon as it sees the diagnosis, rather than waiting out the full
+crash-loop budget it applies to failures with no stated cause. Watch for the
+`AutoReinitializing` event:
+
+```bash
+kubectl get events --field-selector reason=AutoReinitializing
+```
+
+**For a primary it is not**, because there is no healthy instance to clone from.
+Restore the cluster from a backup, or recover to a point in time before the
+damage (see [Point-in-time recovery](./pitr.md)). If neither is possible and you
+must salvage data from the damaged volume, that is a manual operation: start a
+throwaway mysqld over a *copy* of the data with `innodb_force_recovery` set (1,
+escalating only as far as needed), `mysqldump` what you can, and load it into a
+fresh cluster.
+
+The operator never sets `innodb_force_recovery` itself. MySQL blocks `INSERT`,
+`UPDATE` and `DELETE` whenever it is above zero, so a force-recovered server
+cannot accept writes as a primary or apply relay logs as a replica: it would
+appear healthy while refusing every write and falling permanently behind. It is
+a salvage tool, not a way back into service.
+
+**If the diagnosis is wrong**: the volume was fine and the failure was
+environmental, the marker clears itself the first time mysqld starts cleanly.
+
+## Primary change is stuck
+
+Inspect:
+
+```bash
+kubectl cnmsql status <cluster>
+```
+
+Common causes:
+
+- target replica is not healthy;
+- target GTID set does not contain the old primary's observed GTID set;
+- `spec.maxSwitchoverDelay` expired;
+- old primary could not be demoted or fenced;
+- a former primary returned with errant transactions.
+
+Check `status.currentPrimary`, `status.targetPrimary`,
+`status.targetPrimaryTimestamp`, `status.divergedInstances`, and Events.
+
+## Automatic failover did not happen
+
+cnmsql blocks failover when it cannot prove a safe candidate.
+
+Check:
+
+```bash
+kubectl cnmsql status <cluster>
+```
+
+Likely explanations:
+
+- failover delay has not elapsed;
+- Kubernetes still reports the primary Pod as Ready;
+- no ready replica exists;
+- replication SQL state is unhealthy;
+- GTID sets are incomparable or divergent;
+- every surviving candidate is known-diverged (listed in
+  `status.divergedInstances`), so promoting one would make errant transactions
+  canonical; the blocked reason says "every replica candidate has diverged ...
+  manual recovery required";
+- the only candidate is being deleted.
+
+Failover should not be triggered solely by a temporary manager status endpoint
+failure while Kubernetes still routes the primary as Ready.
+
+When failover is blocked because the only survivors are diverged, recover by
+re-initialising a survivor (see below) and letting it re-clone from a backup.
+
+## Backup failed
+
+Inspect:
+
+```bash
+kubectl describe backup <backup>
+kubectl get job <backup>-backup
+kubectl logs job/<backup>-backup
+```
+
+Common causes:
+
+- missing object-store configuration;
+- missing or invalid S3 credentials;
+- no healthy backup source;
+- source instance-manager stream failed;
+- XtraBackup failed;
+- object-store upload failed.
+
+The controller writes the backup phase, error, Job name, selected source
+instance, destination path, and conditions into Backup status.
+
+## ScheduledBackup did not create a Backup
+
+Inspect:
+
+```bash
+kubectl describe scheduledbackup <scheduledbackup>
+kubectl get backup -l mysql.cnmsql.co/scheduled-backup=<scheduledbackup>
+```
+
+Common causes:
+
+- `spec.suspend: true`;
+- invalid six-field cron expression;
+- a child Backup is still running, so the concurrency guard is deferring;
+- deterministic Backup name collision with a non-owned Backup;
+- first scheduled time has not arrived and `immediate` is false.
+
+The schedule has six fields including seconds.
+
+## Continuous archiving is degraded
+
+Inspect:
+
+```bash
+kubectl get cluster <cluster> -o jsonpath='{.status.continuousArchiving}'
+kubectl describe cluster <cluster>
+```
+
+Common causes:
+
+- object-store endpoint or credentials are wrong;
+- primary cannot upload objects;
+- active binlog has not rotated yet;
+- object-store outage;
+- archiver cannot update manifests or `_index.json`;
+- purge guard is detecting lag.
+
+PITR depends on the archive index and manifests, not just raw binlog objects.
+
+## PITR target is unsatisfiable
+
+Common causes:
+
+- recovery target is before the base backup anchor;
+- target GTID or target time is beyond archived coverage;
+- `_index.json` is missing or stale;
+- required binlog segment or manifest was deleted;
+- archive has a forked or incoherent timeline.
+
+Prefer `targetGTID` for exact recovery boundaries. `targetTime` depends on
+binlog event timestamps and server clocks.
+
+## Object-store data remains after deleting Backup
+
+This is expected today. Deleting a `Backup` object does not delete
+`backup.xbstream` or `metadata.json` from the object store. Remote cleanup is a
+planned finalizer/retention feature.
+
+## Useful labels
+
+```text
+mysql.cnmsql.co/cluster=<cluster>
+mysql.cnmsql.co/instance=<instance>
+mysql.cnmsql.co/role=primary|replica
+mysql.cnmsql.co/bootstrap-instance=<instance>
+mysql.cnmsql.co/scheduled-backup=<scheduledbackup>
+```
+
+These labels make it easier to list Pods, PVCs, Services, bootstrap Jobs, and
+generated Backups for one Cluster or schedule.
